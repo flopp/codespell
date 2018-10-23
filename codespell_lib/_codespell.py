@@ -284,6 +284,10 @@ def parse_options(args):
                       help='Check hidden files (those starting with ".") as '
                            'well.')
 
+    parser.add_option('--camel-case-split',
+                      action='store_true', default=False,
+                      help='Camel-case aware line splitting to find words.')
+
     (o, args) = parser.parse_args(list(args))
 
     if not args:
@@ -411,6 +415,43 @@ def ask_for_word_fix(line, wrongword, misspelling, interactivity):
     return misspelling.fix, fix_case(wrongword, misspelling.data)
 
 
+def extract_words(line, word_regex, camel_case_split):
+    for word1 in word_regex.findall(line):
+        if camel_case_split:
+            w = ''
+            last_upper = False
+            last_alpha = True
+            for c in word1:
+                if c.isalpha():
+                    if last_alpha:
+                        if c.isupper():
+                            if len(w) > 0 and not last_upper:
+                                yield w
+                                w = ''
+                            last_upper = True
+                        else:
+                            if len(w) > 1 and last_upper:
+                                yield w[0:-1]
+                                w = w[-1]
+                            last_upper = False
+                    else:
+                        if w != '':
+                            yield w
+                            w = ''
+                        last_upper = c.isupper()
+                    last_alpha = True
+                else:
+                    if last_alpha and w != '':
+                        yield w
+                        w = ''
+                    last_alpha = False
+                w += c
+            if len(w) > 0:
+                yield w
+        else:
+            yield word1
+
+
 def parse_file(filename, colors, summary, misspellings, exclude_lines,
                file_opener, word_regex, options):
     bad_count = 0
@@ -476,7 +517,7 @@ def parse_file(filename, colors, summary, misspellings, exclude_lines,
         fixed_words = set()
         asked_for = set()
 
-        for word in word_regex.findall(line):
+        for word in extract_words(line, word_regex, options.camel_case_split):
             lword = word.lower()
             if lword in misspellings:
                 fix = misspellings[lword].fix
@@ -575,6 +616,12 @@ def main(*args):
     except re.error as err:
         print('ERROR: invalid regular expression "%s" (%s)' %
               (word_regex, err), file=sys.stderr)
+        parser.print_help()
+        return 1
+
+    if options.camel_case_split and options.write_changes:
+        print('ERROR: --write-changes cannot be used together with '
+              '--camel-case-split')
         parser.print_help()
         return 1
 
